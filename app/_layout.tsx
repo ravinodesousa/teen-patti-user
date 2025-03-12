@@ -39,7 +39,13 @@ import { ThemedView } from "@/components/ThemedView";
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 // SplashScreen.preventAutoHideAsync();
 
+import { Asset } from "expo-asset";
+
 import * as ScreenOrientation from "expo-screen-orientation";
+
+import { Audio } from "expo-av";
+
+// import SlotReeling from "../assets/images/slot_reeling.ogg";
 
 const cardImages = [
   { id: 1, name: "AC", src: require("../assets/images/playing-cards/AC.png") },
@@ -117,15 +123,23 @@ const cardImages = [
 
 const CARD_HEIGHT = 230;
 const SLOT_WIDTH = 162;
-const INITIAL_SPEED = 90; // Faster movement initially
-const SLOW_DOWN_DURATION = 1000; // Smooth transition to final image
+const INITIAL_SPEED = 50; // Faster movement initially
+const SLOW_DOWN_DURATION = 500; // Smooth transition to final image
 const SLOT_COUNT = 3;
 
 // Function to shuffle an array randomly
 const shuffleArray = (array: any[]) =>
   [...array].sort(() => Math.random() - 0.5);
 
+const preloadImages = async () => {
+  const imageAssets = cardImages.map((card) =>
+    Asset.fromModule(card.src).downloadAsync()
+  );
+  await Promise.all(imageAssets);
+};
+
 export default function RootLayout() {
+  const sound = useRef(new Audio.Sound());
   const [showSplash, setShowSplash] = useState(true);
   const [slotSpinning, setslotSpinning] = useState(false);
   const [shuffledSlots, setShuffledSlots] = useState(
@@ -149,12 +163,30 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (loaded) {
-      // SplashScreen.hideAsync();
+      SplashScreen.hideAsync();
+      setTimeout(() => {
+        setShowSplash(false);
+      }, 3000);
     }
   }, [loaded]);
 
+  async function loadResources() {
+    try {
+      await SplashScreen.preventAutoHideAsync(); // Keep splash screen visible
+      await preloadImages(); // Preload images
+    } catch (e) {
+      console.warn("Error preloading images", e);
+    } finally {
+      await SplashScreen.hideAsync(); // Hide splash screen after loading
+      setShowSplash(false); // Ensure UI loads after assets
+    }
+  }
+
   useEffect(() => {
     changeScreenOrientation();
+
+    // loadResources();
+
     const newShuffledSlots = shuffledSlots.map(() => shuffleArray(cardImages));
     setShuffledSlots(newShuffledSlots);
     // initData();
@@ -170,6 +202,9 @@ export default function RootLayout() {
   //   ];
   // };
 
+  const getRandomImages = () =>
+    [...cardImages].sort(() => Math.random() - 0.5).slice(0, 3);
+
   const spinSlot = () => {
     setslotSpinning(true);
     const newShuffledSlots = shuffledSlots.map(() => shuffleArray(cardImages));
@@ -179,7 +214,7 @@ export default function RootLayout() {
     newShuffledSlots.forEach((shuffled, index) => {
       translateYs[index].value = withRepeat(
         withTiming(-CARD_HEIGHT * shuffled.length, {
-          duration: INITIAL_SPEED * shuffled.length,
+          duration: (INITIAL_SPEED * shuffled.length) / 2,
         }),
         -1,
         false
@@ -190,10 +225,16 @@ export default function RootLayout() {
     setTimeout(() => {
       fetchFinalImagesFromServer().then((chosenFinalImages) => {
         console.log("chosenFinalImages", chosenFinalImages);
-        if (chosenFinalImages) {
+        if (chosenFinalImages.length == 3) {
           setFinalImages(chosenFinalImages);
           setIsFetching(false); // Mark as received
           stopSlotsSequentially(chosenFinalImages, newShuffledSlots);
+        } else {
+          const randomImages = getRandomImages();
+          setFinalImages(randomImages);
+          setIsFetching(false); // Mark as received
+          stopSlotsSequentially(randomImages, newShuffledSlots);
+          console.log("randomImages", randomImages);
         }
       });
     }, 5000); // Simulated delay before stopping slots
@@ -235,11 +276,12 @@ export default function RootLayout() {
   const stopSlotsSequentially = (finalImages: any[], shuffledSlots: any[]) => {
     finalImages.forEach((finalImage, index) => {
       setTimeout(() => {
-        cancelAnimation(translateYs[index]);
+        cancelAnimation(translateYs[index]); // Stop infinite animation
 
         const finalIndex = shuffledSlots[index].findIndex(
           (img) => img === finalImage
         );
+
         const finalOffset = -CARD_HEIGHT * finalIndex;
 
         translateYs[index].value = withTiming(
@@ -253,12 +295,13 @@ export default function RootLayout() {
             });
           }
         );
-      }, index * 1000); // Delay each stop by 1 second
+      }, index * 1000); // Delay each stop by 1 second (left -> middle -> right)
     });
 
+    // Finish the spin process
     setTimeout(() => {
       setslotSpinning(false);
-    }, 4000);
+    }, 5000);
   };
 
   async function changeScreenOrientation() {
@@ -271,7 +314,6 @@ export default function RootLayout() {
     await SplashScreen.preventAutoHideAsync();
     setTimeout(() => {
       SplashScreen.hideAsync();
-      setShowSplash(false);
     }, 2000); // Hide after 2 seconds
   }
 
@@ -281,446 +323,447 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-      {!showSplash && (
-        <View
-          style={{
-            width: Dimensions.get("window").width,
-            height: Dimensions.get("window").height,
-            backgroundColor: "red",
-          }}
-        >
-          <ImageBackground
-            source={require("../assets/images/play_back2.png")}
-            style={{ flex: 1 }}
-          >
-            <Image
-              source={require("../assets/images/text.png")}
-              style={{
-                position: "absolute",
-                top: -26,
-                left: "34%",
-                // height: 90,
-                width: "35%",
-                objectFit: "contain",
-              }}
-            />
-
-            <View
-              style={{
-                display: "flex",
-                flexDirection: "row",
-                width: "100%",
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
-              <View
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  width: "15%",
-                  justifyContent: "flex-end",
-                  alignItems: "center",
-                  alignSelf: "flex-end",
-                  marginBottom: 30,
-                }}
-              >
-                <View style={{ marginVertical: 10, marginHorizontal: 10 }}>
-                  <AwesomeButton
-                    backgroundColor="#911f12"
-                    backgroundDarker="#7a2016"
-                    width={80}
-                    height={50}
-                    onPress={() => {
-                      setBetAmount((prevCount) => prevCount + 100);
-                    }}
-                  >
-                    <Text
-                      style={{
-                        textAlign: "center",
-                        color: "yellow",
-                        fontSize: 15,
-                        fontWeight: "bold",
-                      }}
-                    >
-                      +100
-                    </Text>
-                  </AwesomeButton>
-                </View>
-                <View style={{ marginVertical: 10, marginHorizontal: 10 }}>
-                  <AwesomeButton
-                    backgroundColor="#911f12"
-                    backgroundDarker="#7a2016"
-                    width={80}
-                    height={50}
-                    onPress={() => {
-                      setBetAmount((prevCount) => prevCount + 1000);
-                    }}
-                  >
-                    <Text
-                      style={{
-                        textAlign: "center",
-                        color: "yellow",
-                        fontSize: 15,
-                        fontWeight: "bold",
-                      }}
-                    >
-                      +1000
-                    </Text>
-                  </AwesomeButton>
-                </View>
-                <View style={{ marginVertical: 10, marginHorizontal: 10 }}>
-                  <AwesomeButton
-                    backgroundColor="#911f12"
-                    backgroundDarker="#7a2016"
-                    width={82}
-                    height={50}
-                    onPress={() => {
-                      setBetAmount((prevCount) => prevCount + 10000);
-                    }}
-                  >
-                    <Text
-                      style={{
-                        textAlign: "center",
-                        color: "yellow",
-                        fontSize: 13,
-                        fontWeight: "bold",
-                      }}
-                    >
-                      +10000
-                    </Text>
-                  </AwesomeButton>
-                </View>
-              </View>
-
-              <View
-                style={{
-                  display: "flex",
-                  flexDirection: "row",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  width: "70%",
-                  height: "75%",
-                  borderColor: "#3C0805",
-                  borderWidth: 6,
-                  borderRadius: 10,
-                  backgroundColor: "#911f12",
-                  alignSelf: "flex-end",
-                }}
-              >
-                <View
-                  style={{
-                    display: "flex",
-                    flexDirection: "row",
-                    justifyContent: "center",
-                    alignItems: "center",
-                  }}
-                >
-                  {Array.from({ length: SLOT_COUNT }, (_, slotIndex) => (
-                    <View key={slotIndex} style={styles.slotContainer}>
-                      {stoppedSlots[slotIndex] ? (
-                        <Image
-                          source={finalImages[slotIndex]?.src}
-                          style={styles.card}
-                        />
-                      ) : (
-                        <Animated.View
-                          style={[
-                            useAnimatedStyle(() => ({
-                              transform: [
-                                { translateY: translateYs[slotIndex].value },
-                              ],
-                            })),
-                          ]}
-                        >
-                          {[
-                            ...shuffledSlots[slotIndex],
-                            ...shuffledSlots[slotIndex],
-                          ].map((source, index) => (
-                            <Image
-                              key={index}
-                              source={source.src}
-                              style={styles.card}
-                            />
-                          ))}
-                        </Animated.View>
-                      )}
-                    </View>
-                  ))}
-                  {/* <View style={styles.cardContainerz}>
-                  <Image
-                    source={require("../assets/images/playing-cards/2C.png")}
-                    style={styles.cardImage}
-                  />
-                </View> */}
-
-                  {/* <View style={styles.cardContainerz}>
-                  <Image
-                    source={require("../assets/images/playing-cards/2C.png")}
-                    style={styles.cardImage}
-                  />
-                </View> */}
-                </View>
-                <View
-                  style={{
-                    position: "absolute",
-                    bottom: 5,
-                    display: "flex",
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    width: "95%",
-                    // marginHorizontal: 10,
-                  }}
-                >
-                  <View
-                    style={{
-                      display: "flex",
-                      flexDirection: "row",
-                      borderColor: "#3C0805",
-                      borderWidth: 5,
-                      borderRadius: 2,
-                      backgroundColor: "#911f12",
-                      paddingVertical: 4,
-                      paddingHorizontal: 4,
-                      height: 60,
-                      // width: "25%",
-                    }}
-                  >
-                    <View
-                      style={{
-                        backgroundColor: "#3C0805",
-                        width: 120,
-                        marginHorizontal: 5,
-                        borderRadius: 5,
-                        display: "flex",
-                        justifyContent: "center",
-                        alignItems: "center",
-                      }}
-                    >
-                      <Text style={{ color: "yellow", fontSize: 16 }}>
-                        Bet: {betAmount}
-                      </Text>
-                    </View>
-                    <TouchableOpacity
-                      style={{
-                        backgroundColor: "#3C0805",
-                        // width: 120,
-                        marginHorizontal: 2,
-                        paddingHorizontal: 6,
-                        borderRadius: 5,
-                        display: "flex",
-                        justifyContent: "center",
-                        alignItems: "center",
-                      }}
-                      onPress={() => {
-                        setBetAmount(0);
-                      }}
-                    >
-                      <Text style={{ color: "yellow", fontSize: 16 }}>
-                        Reset
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                  <View
-                    style={{
-                      display: "flex",
-                      flexDirection: "row",
-                      borderColor: "#3C0805",
-                      borderWidth: 5,
-                      borderRadius: 2,
-                      backgroundColor: "#911f12",
-                      paddingVertical: 4,
-                      paddingHorizontal: 4,
-                      marginLeft: 20,
-                      height: 60,
-                      flex: 1,
-                    }}
-                  >
-                    <View
-                      style={{
-                        flex: 1,
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "center",
-                        alignItems: "center",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color: "yellow",
-                          fontSize: 16,
-                          fontWeight: "bold",
-                          textAlign: "center",
-                        }}
-                      >
-                        Balance
-                      </Text>
-                      <View
-                        style={{
-                          display: "flex",
-                          flexDirection: "row",
-                          justifyContent: "center",
-                          alignItems: "center",
-                        }}
-                      >
-                        <Image
-                          source={require("../assets/images/dollar_small.png")}
-                          style={{ objectFit: "contain", width: 10 }}
-                        />
-                        <View
-                          style={{ backgroundColor: "#3C0805", width: "60%" }}
-                        >
-                          <Text
-                            style={{
-                              color: "yellow",
-                              fontSize: 16,
-                              fontWeight: "bold",
-                            }}
-                          >
-                            0
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-
-                    <View
-                      style={{
-                        flex: 1,
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "center",
-                        alignItems: "center",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color: "yellow",
-                          fontSize: 16,
-                          fontWeight: "bold",
-                          textAlign: "center",
-                        }}
-                      >
-                        Last Win
-                      </Text>
-                      <View
-                        style={{
-                          display: "flex",
-                          flexDirection: "row",
-                          justifyContent: "center",
-                          alignItems: "center",
-                        }}
-                      >
-                        <Image
-                          source={require("../assets/images/dollar_small.png")}
-                          style={{ objectFit: "contain", width: 10 }}
-                        />
-                        <View
-                          style={{ backgroundColor: "#3C0805", width: "60%" }}
-                        >
-                          <Text
-                            style={{
-                              color: "yellow",
-                              fontSize: 16,
-                              fontWeight: "bold",
-                            }}
-                          >
-                            0
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-                  </View>
-                </View>
-
-                {!slotSpinning && (
-                  <View
-                    style={{
-                      position: "absolute",
-                      // top: "30%",
-                      display: "flex",
-                      justifyContent: "center",
-                      alignItems: "center",
-                      backgroundColor: "rgba(0, 0, 0, 0.3)",
-                      width: "100%",
-                      height: "100%",
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 40,
-                        fontWeight: "bold",
-                        color: "black",
-                        textShadowColor: "yellow",
-                        textShadowOffset: { width: -2, height: 2 },
-                        textShadowRadius: 3,
-                      }}
-                    >
-                      SPIN for test your LUCK!
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              <View
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  width: "15%",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  paddingTop: 15,
-                }}
-              >
-                <TouchableOpacity style={{ marginVertical: 4 }}>
-                  <Image
-                    source={require("../assets/images/help.png")}
-                    style={{ width: 50, height: 50, objectFit: "fill" }}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity style={{ marginVertical: 4 }}>
-                  <Image
-                    source={require("../assets/images/share.png")}
-                    style={{ width: 50, height: 50, objectFit: "fill" }}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity style={{ marginVertical: 4 }}>
-                  <Image
-                    source={require("../assets/images/sound.png")}
-                    style={{ width: 50, height: 50, objectFit: "fill" }}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity style={{ marginVertical: 4 }}>
-                  <Image
-                    source={require("../assets/images/bonus.png")}
-                    style={{ width: 50, height: 50, objectFit: "fill" }}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => {
-                    spinSlot();
-                  }}
-                  style={{ marginVertical: 4 }}
-                >
-                  <Image
-                    source={require("../assets/images/spin.png")}
-                    style={{ width: 90, height: 90, objectFit: "fill" }}
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </ImageBackground>
-        </View>
-      )}
       {showSplash && (
         <ImageBackground
           style={{
             width: Dimensions.get("window").width,
             height: Dimensions.get("window").height,
             backgroundColor: "red",
+            position: "fixed",
+            top: 0,
           }}
           source={require("../assets/images/splash.png")}
         ></ImageBackground>
       )}
+      <View
+        style={{
+          width: Dimensions.get("window").width,
+          height: Dimensions.get("window").height,
+          backgroundColor: "red",
+        }}
+      >
+        <ImageBackground
+          source={require("../assets/images/play_back2.png")}
+          style={{ flex: 1 }}
+        >
+          <Image
+            source={require("../assets/images/text.png")}
+            style={{
+              position: "absolute",
+              top: -26,
+              left: "34%",
+              // height: 90,
+              width: "35%",
+              objectFit: "contain",
+            }}
+          />
+
+          <View
+            style={{
+              display: "flex",
+              flexDirection: "row",
+              width: "100%",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <View
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                width: "15%",
+                justifyContent: "flex-end",
+                alignItems: "center",
+                alignSelf: "flex-end",
+                marginBottom: 30,
+              }}
+            >
+              <View style={{ marginVertical: 10, marginHorizontal: 10 }}>
+                <AwesomeButton
+                  backgroundColor="#911f12"
+                  backgroundDarker="#7a2016"
+                  width={80}
+                  height={50}
+                  onPress={() => {
+                    setBetAmount((prevCount) => prevCount + 100);
+                  }}
+                >
+                  <Text
+                    style={{
+                      textAlign: "center",
+                      color: "yellow",
+                      fontSize: 15,
+                      fontWeight: "bold",
+                    }}
+                  >
+                    +100
+                  </Text>
+                </AwesomeButton>
+              </View>
+              <View style={{ marginVertical: 10, marginHorizontal: 10 }}>
+                <AwesomeButton
+                  backgroundColor="#911f12"
+                  backgroundDarker="#7a2016"
+                  width={80}
+                  height={50}
+                  onPress={() => {
+                    setBetAmount((prevCount) => prevCount + 1000);
+                  }}
+                >
+                  <Text
+                    style={{
+                      textAlign: "center",
+                      color: "yellow",
+                      fontSize: 15,
+                      fontWeight: "bold",
+                    }}
+                  >
+                    +1000
+                  </Text>
+                </AwesomeButton>
+              </View>
+              <View style={{ marginVertical: 10, marginHorizontal: 10 }}>
+                <AwesomeButton
+                  backgroundColor="#911f12"
+                  backgroundDarker="#7a2016"
+                  width={82}
+                  height={50}
+                  onPress={() => {
+                    setBetAmount((prevCount) => prevCount + 10000);
+                  }}
+                >
+                  <Text
+                    style={{
+                      textAlign: "center",
+                      color: "yellow",
+                      fontSize: 13,
+                      fontWeight: "bold",
+                    }}
+                  >
+                    +10000
+                  </Text>
+                </AwesomeButton>
+              </View>
+            </View>
+
+            <View
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                justifyContent: "center",
+                alignItems: "center",
+                width: "70%",
+                height: "75%",
+                borderColor: "#3C0805",
+                borderWidth: 6,
+                borderRadius: 10,
+                backgroundColor: "#911f12",
+                alignSelf: "flex-end",
+              }}
+            >
+              <View
+                style={{
+                  display: "flex",
+                  flexDirection: "row",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                {Array.from({ length: SLOT_COUNT }, (_, slotIndex) => (
+                  <View key={slotIndex} style={styles.slotContainer}>
+                    {stoppedSlots[slotIndex] ? (
+                      <Image
+                        source={finalImages[slotIndex]?.src}
+                        style={styles.card}
+                      />
+                    ) : (
+                      <Animated.View
+                        style={[
+                          useAnimatedStyle(() => ({
+                            transform: [
+                              { translateY: translateYs[slotIndex].value },
+                            ],
+                          })),
+                        ]}
+                      >
+                        {[
+                          ...shuffledSlots[slotIndex],
+                          ...shuffledSlots[slotIndex],
+                        ].map((source, index) => (
+                          <Image
+                            key={index}
+                            source={source.src}
+                            style={styles.card}
+                          />
+                        ))}
+                      </Animated.View>
+                    )}
+                  </View>
+                ))}
+                {/* <View style={styles.cardContainerz}>
+                  <Image
+                    source={require("../assets/images/playing-cards/2C.png")}
+                    style={styles.cardImage}
+                  />
+                </View> */}
+
+                {/* <View style={styles.cardContainerz}>
+                  <Image
+                    source={require("../assets/images/playing-cards/2C.png")}
+                    style={styles.cardImage}
+                  />
+                </View> */}
+              </View>
+              <View
+                style={{
+                  position: "absolute",
+                  bottom: 5,
+                  display: "flex",
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  width: "95%",
+                  // marginHorizontal: 10,
+                }}
+              >
+                <View
+                  style={{
+                    display: "flex",
+                    flexDirection: "row",
+                    borderColor: "#3C0805",
+                    borderWidth: 5,
+                    borderRadius: 2,
+                    backgroundColor: "#911f12",
+                    paddingVertical: 4,
+                    paddingHorizontal: 4,
+                    height: 60,
+                    // width: "25%",
+                  }}
+                >
+                  <View
+                    style={{
+                      backgroundColor: "#3C0805",
+                      width: 120,
+                      marginHorizontal: 5,
+                      borderRadius: 5,
+                      display: "flex",
+                      justifyContent: "center",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text style={{ color: "yellow", fontSize: 16 }}>
+                      Bet: {betAmount}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: "#3C0805",
+                      // width: 120,
+                      marginHorizontal: 2,
+                      paddingHorizontal: 6,
+                      borderRadius: 5,
+                      display: "flex",
+                      justifyContent: "center",
+                      alignItems: "center",
+                    }}
+                    onPress={() => {
+                      setBetAmount(0);
+                    }}
+                  >
+                    <Text style={{ color: "yellow", fontSize: 16 }}>Reset</Text>
+                  </TouchableOpacity>
+                </View>
+                <View
+                  style={{
+                    display: "flex",
+                    flexDirection: "row",
+                    borderColor: "#3C0805",
+                    borderWidth: 5,
+                    borderRadius: 2,
+                    backgroundColor: "#911f12",
+                    paddingVertical: 4,
+                    paddingHorizontal: 4,
+                    marginLeft: 20,
+                    height: 60,
+                    flex: 1,
+                  }}
+                >
+                  <View
+                    style={{
+                      flex: 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "center",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: "yellow",
+                        fontSize: 16,
+                        fontWeight: "bold",
+                        textAlign: "center",
+                      }}
+                    >
+                      Balance
+                    </Text>
+                    <View
+                      style={{
+                        display: "flex",
+                        flexDirection: "row",
+                        justifyContent: "center",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Image
+                        source={require("../assets/images/dollar_small.png")}
+                        style={{ objectFit: "contain", width: 10 }}
+                      />
+                      <View
+                        style={{ backgroundColor: "#3C0805", width: "60%" }}
+                      >
+                        <Text
+                          style={{
+                            color: "yellow",
+                            fontSize: 16,
+                            fontWeight: "bold",
+                          }}
+                        >
+                          0
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View
+                    style={{
+                      flex: 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "center",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: "yellow",
+                        fontSize: 16,
+                        fontWeight: "bold",
+                        textAlign: "center",
+                      }}
+                    >
+                      Last Win
+                    </Text>
+                    <View
+                      style={{
+                        display: "flex",
+                        flexDirection: "row",
+                        justifyContent: "center",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Image
+                        source={require("../assets/images/dollar_small.png")}
+                        style={{ objectFit: "contain", width: 10 }}
+                      />
+                      <View
+                        style={{ backgroundColor: "#3C0805", width: "60%" }}
+                      >
+                        <Text
+                          style={{
+                            color: "yellow",
+                            fontSize: 16,
+                            fontWeight: "bold",
+                          }}
+                        >
+                          0
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {!slotSpinning && (
+                <View
+                  style={{
+                    position: "absolute",
+                    // top: "30%",
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    backgroundColor: "rgba(0, 0, 0, 0.3)",
+                    width: "100%",
+                    height: "100%",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 40,
+                      fontWeight: "bold",
+                      color: "black",
+                      textShadowColor: "yellow",
+                      textShadowOffset: { width: -2, height: 2 },
+                      textShadowRadius: 3,
+                    }}
+                  >
+                    SPIN for test your LUCK!
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                width: "15%",
+                justifyContent: "center",
+                alignItems: "center",
+                paddingTop: 15,
+              }}
+            >
+              <TouchableOpacity style={{ marginVertical: 4 }}>
+                <Image
+                  source={require("../assets/images/help.png")}
+                  style={{ width: 50, height: 50, objectFit: "fill" }}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity style={{ marginVertical: 4 }}>
+                <Image
+                  source={require("../assets/images/share.png")}
+                  style={{ width: 50, height: 50, objectFit: "fill" }}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity style={{ marginVertical: 4 }}>
+                <Image
+                  source={require("../assets/images/sound.png")}
+                  style={{ width: 50, height: 50, objectFit: "fill" }}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity style={{ marginVertical: 4 }}>
+                <Image
+                  source={require("../assets/images/bonus.png")}
+                  style={{ width: 50, height: 50, objectFit: "fill" }}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  if (!slotSpinning) {
+                    spinSlot();
+                  }
+                }}
+                style={{ marginVertical: 4 }}
+              >
+                <Image
+                  source={require("../assets/images/spin.png")}
+                  style={{ width: 90, height: 90, objectFit: "fill" }}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ImageBackground>
+      </View>
+
       <StatusBar style="auto" />
     </ThemeProvider>
   );
